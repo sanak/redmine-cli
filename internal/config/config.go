@@ -141,6 +141,12 @@ func LoadProfiles(configPath string, log *debug.Logger) (*ProfileConfig, error) 
 		return nil, err
 	}
 
+	if info, statErr := os.Stat(configPath); statErr == nil {
+		if perm := info.Mode().Perm(); perm&0o077 != 0 {
+			log.Printf("Config: warning: %s is group/world-readable (%o); run 'chmod 600 %s'", configPath, perm, configPath)
+		}
+	}
+
 	// Try to detect format by checking for "profiles" key
 	var raw map[string]interface{}
 	if err := yaml.Unmarshal(data, &raw); err != nil {
@@ -198,7 +204,7 @@ func SaveProfiles(pc *ProfileConfig, path string) error {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
 
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o600)
 }
 
 // Save writes a single profile's configuration (used by auth login).

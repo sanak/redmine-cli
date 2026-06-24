@@ -544,3 +544,38 @@ func TestApplyEnvOverrides_MCPAuthToken(t *testing.T) {
 		t.Errorf("AuthToken = %q, want from-env (env should override file)", cfg.MCP.AuthToken)
 	}
 }
+
+func TestSaveProfilesUses0600(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
+	pc := &ProfileConfig{
+		ActiveProfile: "default",
+		Profiles: map[string]Config{
+			"default": {Server: "https://redmine.example.com", APIKey: "secret", AuthMethod: "apikey"},
+		},
+	}
+	if err := SaveProfiles(pc, cfgPath); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("config perm = %o, want 600", perm)
+	}
+}
+
+func TestLoadProfilesWarnsOnLoosePerms(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte("profiles:\n  default:\n    server: https://x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var buf strings.Builder
+	log := debug.New(&buf)
+	if _, err := LoadProfiles(cfgPath, log); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "group/world-readable") {
+		t.Fatalf("expected loose-perms warning, got: %q", buf.String())
+	}
+}
