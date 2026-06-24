@@ -10,8 +10,26 @@ import (
 	"github.com/aarondpn/redmine-cli/v2/internal/api"
 	"github.com/aarondpn/redmine-cli/v2/internal/cmdutil"
 	"github.com/aarondpn/redmine-cli/v2/internal/config"
+	"github.com/aarondpn/redmine-cli/v2/internal/credstore"
 	"github.com/aarondpn/redmine-cli/v2/internal/output"
 )
+
+// persistCredentials decides where the secret lives. With keyringOK, the API
+// key is stored in the OS keyring and omitted from the config file; otherwise
+// it falls back to the (0600) config file.
+func persistCredentials(profile string, cfg *config.Config, plainKey string, store credstore.Store, keyringOK bool) error {
+	if keyringOK {
+		if err := store.Set(profile, plainKey); err != nil {
+			return fmt.Errorf("storing secret in keyring: %w", err)
+		}
+		cfg.CredentialStore = "keyring"
+		cfg.APIKey = ""
+		return nil
+	}
+	cfg.CredentialStore = "file"
+	cfg.APIKey = plainKey
+	return nil
+}
 
 // NewCmdLogin creates the auth login command.
 func NewCmdLogin(f *cmdutil.Factory) *cobra.Command {
@@ -183,7 +201,16 @@ func runLogin(f *cmdutil.Factory, profileName string) error {
 	cfg.DefaultProject = defProject
 	cfg.OutputFormat = "table"
 
-	// Step 6: Save profile
+	// Step 6: Persist credentials (keyring preferred, file fallback). Done
+	// after the connection test so cfg still carries the key during the probe.
+	if authMethod == "apikey" {
+		keyringOK := credstore.Available()
+		if err := persistCredentials(profileName, cfg, apiKey, credstore.New(), keyringOK); err != nil {
+			return err
+		}
+	}
+
+	// Step 7: Save profile
 	configPath := config.DefaultConfigPath()
 	if f.ConfigPath != "" {
 		configPath = f.ConfigPath
