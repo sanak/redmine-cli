@@ -9,9 +9,19 @@ import (
 
 	"github.com/aarondpn/redmine-cli/v2/internal/cmdutil"
 	"github.com/aarondpn/redmine-cli/v2/internal/config"
+	"github.com/aarondpn/redmine-cli/v2/internal/credstore"
 	"github.com/aarondpn/redmine-cli/v2/internal/debug"
 	"github.com/aarondpn/redmine-cli/v2/internal/output"
 )
+
+// removeKeyringSecret best-effort deletes a profile's secret from the OS
+// keyring. A missing entry is not an error.
+func removeKeyringSecret(profile string) error {
+	if err := credstore.New().Delete(profile); err != nil && !errors.Is(err, credstore.ErrNotFound) {
+		return err
+	}
+	return nil
+}
 
 // NewCmdLogout creates the auth logout command.
 func NewCmdLogout(f *cmdutil.Factory) *cobra.Command {
@@ -78,6 +88,12 @@ func runLogout(f *cmdutil.Factory, args []string) error {
 
 	if err := config.DeleteProfile(name, configPath); err != nil {
 		return fmt.Errorf("removing profile: %w", err)
+	}
+
+	// Best-effort: drop the secret from the OS keyring too. The profile is
+	// already removed, so a keyring failure should not fail the logout.
+	if err := removeKeyringSecret(name); err != nil {
+		f.DebugLogger().Printf("Logout: keyring delete for profile %q failed: %v", name, err)
 	}
 
 	printer.Action(output.ActionLoggedOut, "profile", name, fmt.Sprintf("Profile %q removed", name))

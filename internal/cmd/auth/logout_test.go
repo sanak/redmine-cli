@@ -8,6 +8,8 @@ import (
 
 	"github.com/aarondpn/redmine-cli/v2/internal/cmdutil"
 	"github.com/aarondpn/redmine-cli/v2/internal/config"
+	"github.com/aarondpn/redmine-cli/v2/internal/credstore"
+	"github.com/zalando/go-keyring"
 )
 
 func TestResolveLogoutProfileName_HonorsProfileOverride(t *testing.T) {
@@ -135,5 +137,18 @@ func TestLogout_NoProfilesConfigured_IgnoresJSONDefault(t *testing.T) {
 	}
 	if errOut := f.IOStreams.ErrOut.(*strings.Builder).String(); !strings.Contains(errOut, noProfilesConfiguredMessage) {
 		t.Fatalf("expected warning %q, got:\n%s", noProfilesConfiguredMessage, errOut)
+	}
+}
+
+func TestLogoutRemovesKeyringSecret(t *testing.T) {
+	keyring.MockInit()
+	if err := credstore.New().Set("work", "secret"); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeKeyringSecret("work"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := credstore.New().Get("work"); err == nil {
+		t.Fatal("expected secret to be deleted from keyring")
 	}
 }
