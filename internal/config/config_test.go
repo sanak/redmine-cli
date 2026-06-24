@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aarondpn/redmine-cli/v2/internal/credstore"
 	"github.com/aarondpn/redmine-cli/v2/internal/debug"
+	"github.com/zalando/go-keyring"
 )
 
 func TestLoadLegacyFlatFormat(t *testing.T) {
@@ -542,5 +544,46 @@ func TestApplyEnvOverrides_MCPAuthToken(t *testing.T) {
 	}
 	if cfg.MCP.AuthToken != "from-env" {
 		t.Errorf("AuthToken = %q, want from-env (env should override file)", cfg.MCP.AuthToken)
+	}
+}
+
+func TestLoadResolvesKeyringSecret(t *testing.T) {
+	keyring.MockInit()
+	if err := credstore.New().Set("work", "from-keyring"); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
+	content := "active_profile: work\nprofiles:\n  work:\n    server: https://work.example.com\n    auth_method: apikey\n    credential_store: keyring\n"
+	if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath, "", debug.New(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.APIKey != "from-keyring" {
+		t.Fatalf("APIKey = %q, want %q", cfg.APIKey, "from-keyring")
+	}
+}
+
+func TestEnvBeatsKeyring(t *testing.T) {
+	keyring.MockInit()
+	if err := credstore.New().Set("work", "from-keyring"); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
+	content := "active_profile: work\nprofiles:\n  work:\n    server: https://work.example.com\n    auth_method: apikey\n    credential_store: keyring\n"
+	if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("REDMINE_API_KEY", "from-env")
+
+	cfg, err := Load(cfgPath, "", debug.New(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.APIKey != "from-env" {
+		t.Fatalf("APIKey = %q, want env to win", cfg.APIKey)
 	}
 }

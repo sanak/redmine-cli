@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aarondpn/redmine-cli/v2/internal/credstore"
 	"github.com/aarondpn/redmine-cli/v2/internal/debug"
 	"gopkg.in/yaml.v3"
 )
@@ -70,6 +71,7 @@ func load(configPath string, profileName string, allowNoActiveProfile bool, log 
 		// Single profile, use it even without active_profile set
 		for n, p := range pc.Profiles {
 			cfg = p
+			name = n
 			log.Printf("Config: loaded only profile %q from %s", n, configPath)
 		}
 	} else if len(pc.Profiles) == 0 {
@@ -95,6 +97,18 @@ func load(configPath string, profileName string, allowNoActiveProfile bool, log 
 	}
 	if cfg.OutputFormat == "" {
 		cfg.OutputFormat = "table"
+	}
+
+	// Resolve the secret from the OS keyring when configured and not already
+	// supplied by the config file or environment. Env always wins because we
+	// only hit the keyring when APIKey is still empty.
+	if cfg.CredentialStore == "keyring" && cfg.APIKey == "" && name != "" {
+		secret, kerr := credstore.New().Get(name)
+		if kerr == nil {
+			cfg.APIKey = secret
+		} else if !errors.Is(kerr, credstore.ErrNotFound) {
+			log.Printf("Config: keyring lookup for profile %q failed: %v", name, kerr)
+		}
 	}
 
 	return &cfg, nil
